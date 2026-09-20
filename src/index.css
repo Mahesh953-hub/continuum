@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-universe: #050608;
+    --grid-line: rgba(255, 255, 255, 0.04);
+    --grid-axis: rgba(255, 255, 255, 0.09);
+    --text-primary: #e6ebf5;
+    --text-muted: #7e889b;
+    --accent-blue: #3b82f6;
+    --accent-violet: #8b5cf6;
+    --control-bg: rgba(13, 16, 23, 0.75);
+    --control-border: rgba(255, 255, 255, 0.12);
+    --control-hover: rgba(255, 255, 255, 0.18);
+    --particle-base: #f1f5f9;
+  }
+
+  [data-theme="light"] {
+    --bg-universe: #f8fafc;
+    --grid-line: rgba(0, 0, 0, 0.04);
+    --grid-axis: rgba(0, 0, 0, 0.09);
+    --text-primary: #0f172a;
+    --text-muted: #64748b;
+    --accent-blue: #2563eb;
+    --accent-violet: #7c3aed;
+    --control-bg: rgba(255, 255, 255, 0.85);
+    --control-border: rgba(0, 0, 0, 0.12);
+    --control-hover: rgba(0, 0, 0, 0.08);
+    --particle-base: #0f172a;
+  }
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+.font-mono-math {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Custom scrollbar for Pencil menu */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
