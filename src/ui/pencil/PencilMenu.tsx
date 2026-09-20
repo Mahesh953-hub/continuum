@@ -17,6 +17,7 @@ import {
   Search,
   BookOpen,
   RotateCcw,
+  Orbit,
 } from 'lucide-react';
 import { useUniverseStore } from '../../state/useUniverseStore';
 import { PRESETS_REGISTRY } from '../../presets/presetRegistry';
@@ -52,16 +53,18 @@ export const PencilMenu: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ShapeCategory | 'all'>('all');
+  const [galaxySearch, setGalaxySearch] = useState('');
 
   if (!pencilOpen) return null;
 
   const categories: { id: ShapeCategory | 'all'; label: string }[] = [
     { id: 'all', label: 'All Shapes' },
+    { id: 'cosmic', label: 'Galaxy & Cosmos' },
+    { id: 'quantum', label: 'Quantum' },
     { id: 'geometry', label: 'Geometry' },
     { id: 'parametric', label: 'Parametric' },
     { id: 'fractals', label: 'Fractals' },
     { id: 'dimensions', label: '1D–11D' },
-    { id: 'cosmic', label: 'Cosmic' },
     { id: 'biological', label: 'Biological' },
     { id: 'diagrams', label: 'Diagrams' },
   ];
@@ -73,6 +76,16 @@ export const PencilMenu: React.FC = () => {
       s.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || s.category === selectedCategory;
     return matchesSearch && matchesCategory;
+  });
+
+  const cosmicShapes = SHAPES_REGISTRY.filter((s) => {
+    const isCosmic = s.category === 'cosmic';
+    const matchesSearch =
+      galaxySearch === '' ||
+      s.name.toLowerCase().includes(galaxySearch.toLowerCase()) ||
+      (s.equation && s.equation.toLowerCase().includes(galaxySearch.toLowerCase())) ||
+      s.description.toLowerCase().includes(galaxySearch.toLowerCase());
+    return isCosmic && matchesSearch;
   });
 
   return (
@@ -106,6 +119,7 @@ export const PencilMenu: React.FC = () => {
         <div className="flex items-center gap-1.5 px-6 py-2.5 border-b border-white/8 bg-black/20 overflow-x-auto select-none">
           {[
             { id: 'presets', label: 'Presets', icon: <Sparkles className="w-3.5 h-3.5" /> },
+            { id: 'galaxy', label: 'Galaxy & Cosmos', icon: <Orbit className="w-3.5 h-3.5" /> },
             { id: 'shapes', label: 'Shapes', icon: <Shapes className="w-3.5 h-3.5" /> },
             { id: 'dimensions', label: '1D–11D Dimensions', icon: <Layers className="w-3.5 h-3.5" /> },
             { id: 'physics', label: 'Physics & Forces', icon: <Atom className="w-3.5 h-3.5" /> },
@@ -168,7 +182,65 @@ export const PencilMenu: React.FC = () => {
             </div>
           )}
 
-          {/* SECTION 2: 200+ PROCEDURAL SHAPES CATALOG */}
+          {/* SECTION 2: GALAXY & COSMOS DEDICATED CATALOG (100+ Cosmic Objects) */}
+          {activePencilSection === 'galaxy' && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+                    <Orbit className="w-4 h-4 text-amber-400" />
+                    <span>Cosmos, Galaxies & Relativistic Singularities ({cosmicShapes.length} objects)</span>
+                  </h3>
+                  <p className="text-xs text-white/50">
+                    Milky Way, Andromeda, Schwarzschild & Kerr black holes, pulsars, nebulae, and dark matter haloes
+                  </p>
+                </div>
+                {/* Galaxy Search */}
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                  <input
+                    type="text"
+                    placeholder="Search cosmic objects..."
+                    value={galaxySearch}
+                    onChange={(e) => setGalaxySearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-white/8 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[50vh] overflow-y-auto pr-1">
+                {cosmicShapes.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => selectShape(s.id)}
+                    className={`p-3 rounded-xl text-left transition-all border flex flex-col justify-between ${
+                      activeShapeId === s.id
+                        ? 'bg-amber-600/20 border-amber-500/70 shadow-sm ring-1 ring-amber-500/40'
+                        : 'bg-white/[0.02] border-white/8 hover:bg-white/[0.05] hover:border-white/15'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-xs text-white">{s.name}</span>
+                        <span className="text-[9px] uppercase tracking-wider text-amber-300/70 font-mono-math">
+                          {s.behaviorType || 'Cosmic'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-white/60 line-clamp-2 mb-2 leading-relaxed">{s.description}</p>
+                    </div>
+                    {s.equation && (
+                      <div className="text-[10px] font-mono-math text-amber-300/80 bg-black/40 px-2 py-1 rounded-md truncate">
+                        {s.equation}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 3: PROCEDURAL SHAPES CATALOG */}
           {activePencilSection === 'shapes' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

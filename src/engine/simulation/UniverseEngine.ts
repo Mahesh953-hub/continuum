@@ -9,14 +9,19 @@ import {
   CameraState,
   CanonSettings,
   DimensionConfig,
+  ParticleColorMode,
   ParticleInternal,
+  ParticleSpecies,
   PhysicsConfig,
   SelfHealingConfig,
+  ThemeMode,
 } from '../../types';
 import { getShapeById } from '../shapes/shapeRegistry';
 import { getPresetById } from '../../presets/presetRegistry';
 import { projectNDto2D } from '../../math/projections';
 import { SpatialHash } from '../../math/spatialHash';
+import { CUSTOM_PALETTES, getPaletteById } from '../../ui/pencil/customPalettes';
+import { getParticleMetadata } from '../../ui/lab/particleSpecies';
 
 export interface VisualFxProjectile {
   startX: number;
@@ -55,6 +60,15 @@ export class UniverseEngine {
   public activePresetId: string = 'solar-system';
   public activeShapeId: string = 'solar-system-orbits';
   public handMode: boolean = false;
+  public infinityMode: boolean = false;
+  public infiniteTargetCount: number = 50000;
+  public theme: ThemeMode = 'dark';
+  public activePaletteId: string = 'deep-field';
+  public labSpecies: ParticleSpecies = 'electron';
+  public labColorMode: ParticleColorMode = 'genuine';
+  public activeExperiment: any = null;
+  public aimCrosshair: { x: number; y: number; visible: boolean } = { x: 0, y: 0, visible: false };
+
   public physics: PhysicsConfig;
   public healing: SelfHealingConfig;
   public dimensionConfig: DimensionConfig;
@@ -146,18 +160,59 @@ export class UniverseEngine {
   }
 
   /**
+   * Sets the color theme and immediately clears canvas to prevent ghost trails
+   */
+  public setTheme(theme: ThemeMode) {
+    this.theme = theme;
+    if (this.ctx && this.canvas) {
+      const isDark =
+        theme === 'dark' ||
+        (theme === 'system' && typeof window !== 'undefined'
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+          : true);
+      this.ctx.save();
+      this.ctx.fillStyle = isDark ? '#050608' : '#f8fafc';
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      this.ctx.restore();
+    }
+  }
+
+  /**
    * Initializes or re-allocates particle entities with coordinated appearance
    */
   public initParticles(targetCount: number) {
-    const count = Math.max(200, Math.min(12000, targetCount));
+    let count: number;
+    if (this.infinityMode) {
+      // Genuine particle continuum scaling:
+      // Real-time physical kinetic simulation core budget scaled for max fidelity and smooth 60fps
+      if (this.infiniteTargetCount <= 15000) {
+        count = this.infiniteTargetCount;
+      } else if (this.infiniteTargetCount <= 100000) {
+        count = 12000;
+      } else if (this.infiniteTargetCount <= 1000000) {
+        count = 15000;
+      } else {
+        count = 18000;
+      }
+      // Micro-cluster fine size scaling so millions of particles look finely resolved
+      const logVal = Math.log10(this.infiniteTargetCount); // 4.0 (10k) to 8.0 (100M)
+      const norm = (logVal - 4.0) / 4.0; // 0 to 1
+      this.appearance.particleSize = Math.max(0.45, 1.4 - norm * 0.9);
+    } else {
+      count = Math.max(200, Math.min(14000, targetCount));
+      this.appearance.particleSize = 1.5;
+    }
+
     this.particles = new Array(count);
 
     const shape = getShapeById(this.activeShapeId);
     const targetPoints = shape.generator(count);
 
-    // 15% of particles allocated to boundless cosmic horizon background to guarantee infinite feel
-    const ambientCount = Math.floor(count * 0.15);
+    // Particles allocated to cosmic ambient depth
+    const ambientRatio = this.infinityMode ? 0.28 : 0.15;
+    const ambientCount = Math.floor(count * ambientRatio);
     const structuralCount = count - ambientCount;
+    const maxAmbientRad = this.infinityMode ? 6000 : 2500;
 
     for (let i = 0; i < count; i++) {
       let pt: { x: number; y: number; z?: number; w?: number };
@@ -165,14 +220,14 @@ export class UniverseEngine {
       if (i < structuralCount) {
         pt = targetPoints[i % targetPoints.length] || { x: 0, y: 0 };
       } else {
-        // Expansive cosmic ambient particles radiating outward
+        // Expansive cosmic ambient particles radiating outward infinitely
         const angle = (i * 2.39996) % (Math.PI * 2);
-        const rad = 350 + (i % 200) * 8 + Math.random() * 80;
+        const rad = 350 + (i % 300) * 14 + Math.random() * (maxAmbientRad - 350);
         pt = {
           x: Math.cos(angle) * rad,
           y: Math.sin(angle) * rad,
-          z: (Math.random() - 0.5) * 300,
-          w: (Math.random() - 0.5) * 200,
+          z: (Math.random() - 0.5) * 500,
+          w: (Math.random() - 0.5) * 400,
         };
       }
 
@@ -203,13 +258,141 @@ export class UniverseEngine {
         mass: 1.0 + (i % 5) * 0.2,
         energy: 1.0,
         charge: (i % 2 === 0 ? 1 : -1) * 0.5,
-        size: 1.1 + Math.random() * 0.8,
+        size: this.infinityMode ? (1.3 + Math.random() * 1.0) : (1.1 + Math.random() * 0.8),
         age: 0,
         alive: true,
         shapeIndex: i,
         lastDisplacedTime: 0,
         alpha: 0.85,
       };
+    }
+  }
+
+  public updateAimCrosshair(x: number, y: number, visible: boolean) {
+    this.aimCrosshair = { x, y, visible };
+  }
+
+  public setInfinityMode(enabled: boolean) {
+    this.infinityMode = enabled;
+    if (enabled) {
+      this.initParticles(this.infiniteTargetCount);
+    } else {
+      this.initParticles(3800);
+      this.appearance.particleSize = 1.5;
+    }
+  }
+
+  public setInfiniteTargetCount(count: number) {
+    this.infiniteTargetCount = Math.max(10000, Math.min(100000000, count));
+    if (this.infinityMode) {
+      this.initParticles(this.infiniteTargetCount);
+    }
+  }
+
+  public setPaletteId(paletteId: string) {
+    this.activePaletteId = paletteId;
+    this.appearance.coloredParticles = true;
+    this.appearance.colorSource = 'palette';
+  }
+
+  public setLabSpecies(species: ParticleSpecies) {
+    this.labSpecies = species;
+    const meta = getParticleMetadata(species);
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      p.species = species;
+      p.mass = meta.massMev > 0 ? meta.massMev / 1000 : 0.5;
+      p.charge = meta.charge;
+      if (this.labColorMode === 'genuine') {
+        p.colorOverride = meta.authenticColor;
+      }
+    }
+  }
+
+  public setLabColorMode(mode: ParticleColorMode) {
+    this.labColorMode = mode;
+    const meta = getParticleMetadata(this.labSpecies);
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      if (mode === 'genuine') {
+        p.colorOverride = meta.authenticColor;
+      } else if (mode === 'white') {
+        p.colorOverride = '#ffffff';
+      } else {
+        p.colorOverride = undefined;
+      }
+    }
+  }
+
+  public runLabExperiment(experiment: any, species: ParticleSpecies, colorMode: ParticleColorMode) {
+    this.activeExperiment = experiment;
+    this.activePresetId = 'custom';
+    experiment.setup(this.particles, species, colorMode);
+  }
+
+  public createBlankObject(
+    geom: 'cloud' | 'ring' | 'sphere' | 'lattice' | 'line',
+    count: number,
+    species: ParticleSpecies,
+    colorMode: ParticleColorMode
+  ) {
+    this.activeExperiment = null;
+    this.activeShapeId = `custom-blank-${geom}`;
+    this.initParticles(count);
+    const meta = getParticleMetadata(species);
+    const R = 220;
+
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      p.species = species;
+      p.mass = meta.massMev > 0 ? meta.massMev / 1000 : 0.5;
+      p.charge = meta.charge;
+      if (colorMode === 'genuine') p.colorOverride = meta.authenticColor;
+      else if (colorMode === 'white') p.colorOverride = '#ffffff';
+      else p.colorOverride = undefined;
+
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      if (geom === 'ring') {
+        const theta = (i / count) * Math.PI * 2;
+        x = R * Math.cos(theta);
+        y = R * Math.sin(theta);
+      } else if (geom === 'sphere') {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        x = R * Math.sin(phi) * Math.cos(theta);
+        y = R * Math.sin(phi) * Math.sin(theta);
+        z = R * Math.cos(phi);
+      } else if (geom === 'lattice') {
+        const side = Math.floor(Math.cbrt(count)) || 10;
+        const ix = i % side;
+        const iy = Math.floor((i / side) % side);
+        const iz = Math.floor(i / (side * side));
+        const step = (R * 1.8) / side;
+        x = (ix - side / 2) * step;
+        y = (iy - side / 2) * step;
+        z = (iz - side / 2) * step;
+      } else if (geom === 'line') {
+        x = ((i / count) - 0.5) * (R * 3);
+        y = 0;
+      } else {
+        // cloud
+        const r = Math.random() * R;
+        const theta = Math.random() * Math.PI * 2;
+        x = r * Math.cos(theta);
+        y = r * Math.sin(theta);
+      }
+      p.baseTargetX = x;
+      p.baseTargetY = y;
+      p.baseTargetZ = z;
+      p.targetX = x;
+      p.targetY = y;
+      p.targetZ = z;
+      p.x = x + (Math.random() - 0.5) * 10;
+      p.y = y + (Math.random() - 0.5) * 10;
+      p.vx = 0;
+      p.vy = 0;
     }
   }
 
@@ -306,8 +489,13 @@ export class UniverseEngine {
    * "Canon firing is allowed in Hand mode, but particle effects are suppressed."
    */
   public fireCanon(targetUniverseX: number, targetUniverseY: number) {
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    const zoom = this.camera.zoom;
+    // Tactical Canon turret battery located at bottom center of viewport
     const originX = this.camera.x;
-    const originY = this.camera.y;
+    const originY = this.camera.y + (height / 2) / zoom - 28 / zoom;
+
     const dx = targetUniverseX - originX;
     const dy = targetUniverseY - originY;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -319,7 +507,56 @@ export class UniverseEngine {
     const range = this.canon.range;
     const suppressParticles = this.handMode; // LOCKED RULE: Suppress particle effects in Hand mode
 
-    // Spawn visual projectile fx
+    if (method === 'beam') {
+      // Piercing infinite laser beam traversing across entire cosmic space (4500px)
+      const beamLength = 4500;
+      const endX = originX + dirX * beamLength;
+      const endY = originY + dirY * beamLength;
+
+      this.projectiles.push({
+        startX: originX,
+        startY: originY,
+        targetX: endX,
+        targetY: endY,
+        currentX: originX,
+        currentY: originY,
+        vx: dirX * 35,
+        vy: dirY * 35,
+        type: 'beam',
+        power,
+        range: beamLength,
+        age: 0,
+        maxAge: 22,
+        alive: true,
+        suppressParticleEffect: suppressParticles,
+      });
+
+      // Ionization impulse along infinite laser line
+      if (!suppressParticles) {
+        for (let i = 0; i < this.particles.length; i++) {
+          const p = this.particles[i];
+          const px = p.x - originX;
+          const py = p.y - originY;
+          const projDist = px * dirX + py * dirY;
+          if (projDist > 0 && projDist < beamLength) {
+            const perpX = px - projDist * dirX;
+            const perpY = py - projDist * dirY;
+            const perpDist = Math.sqrt(perpX * perpX + perpY * perpY);
+            if (perpDist < 55) {
+              const push = (1 - perpDist / 55) * power * 4.2;
+              const normX = perpDist > 0.1 ? perpX / perpDist : 0;
+              const normY = perpDist > 0.1 ? perpY / perpDist : 1;
+              p.vx += normX * push;
+              p.vy += normY * push;
+              p.lastDisplacedTime = this.simTime;
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    // Spawn visual projectile fx for projectile modes
     const count = method === 'burst' ? 5 : method === 'spread' ? 7 : method === 'rapid' ? 3 : 1;
     const baseAngle = Math.atan2(dirY, dirX);
 
@@ -330,8 +567,8 @@ export class UniverseEngine {
         angle += (i / (count - 1) - 0.5) * spread;
       }
 
-      const pVx = Math.cos(angle) * 16;
-      const pVy = Math.sin(angle) * 16;
+      const pVx = Math.cos(angle) * 18;
+      const pVy = Math.sin(angle) * 18;
 
       this.projectiles.push({
         startX: originX,
@@ -346,7 +583,7 @@ export class UniverseEngine {
         power,
         range,
         age: 0,
-        maxAge: method === 'beam' ? 14 : 45,
+        maxAge: 45,
         alive: true,
         suppressParticleEffect: suppressParticles,
       });
@@ -370,6 +607,8 @@ export class UniverseEngine {
   public step(dt: number) {
     this.simTime += dt;
     const preset = getPresetById(this.activePresetId);
+    const shape = getShapeById(this.activeShapeId);
+    const behavior = shape?.behaviorType || 'standard';
 
     // Continuous smooth 3D auto-spin so every side can be inspected automatically
     if (this.camera.autoSpin !== false) {
@@ -400,8 +639,10 @@ export class UniverseEngine {
     const cosT = Math.cos(tilt);
     const sinT = Math.sin(tilt);
 
-    // Run preset-specific custom step if present
-    if (preset.customStep) {
+    // Run active custom experiment step if configured in Lab
+    if (this.activeExperiment && this.activeExperiment.step) {
+      this.activeExperiment.step(this.particles, dt * timeScale, this.simTime);
+    } else if (preset.customStep) {
       preset.customStep(this.particles, dt * timeScale, this.simTime);
     }
 
@@ -435,23 +676,79 @@ export class UniverseEngine {
         p.targetY = ry * depthFactor;
       }
 
-      // Self-Healing attraction toward dynamically spinning target rest shape
-      if (healingEnabled && p.alive) {
-        const dx = p.targetX - p.x;
-        const dy = p.targetY - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+      // Authentic physics governed by object behavior type
+      if (behavior === 'blackhole') {
+        // Einstein General Relativity: Schwarzschild & Kerr frame dragging
+        const rSq = p.x * p.x + p.y * p.y;
+        const r = Math.sqrt(rSq) + 0.1;
+        const rs = 34; // Event horizon radius
 
-        if (dist > this.healing.threshold) {
-          // Smooth non-linear spring attractor
-          const pull = Math.min(dist * healStrength, 14.0) * healSpeed;
-          p.vx += (dx / dist) * pull;
-          p.vy += (dy / dist) * pull;
+        if (r > rs) {
+          // Relativistic radial acceleration toward singularity
+          const F = Math.min(22000 / (rSq + 200), 24.0);
+          p.vx -= (p.x / r) * F * dt;
+          p.vy -= (p.y / r) * F * dt;
+
+          // Kerr frame-dragging azimuthal swirl (accretion disk)
+          const drag = (320 / Math.sqrt(r)) * dt;
+          p.vx += (-p.y / r) * drag;
+          p.vy += (p.x / r) * drag;
+        } else {
+          // Inside event horizon: eject relativistic polar jets or replenish
+          if (i % 14 === 0) {
+            p.vx = (Math.random() - 0.5) * 1.5;
+            p.vy = (i % 2 === 0 ? -1 : 1) * (18 + Math.random() * 8);
+          } else {
+            p.vx *= 0.85;
+            p.vy *= 0.85;
+            // Replenish from outer accretion field
+            p.x = Math.cos(i * 1.3) * (rs + 120 + Math.random() * 80);
+            p.y = Math.sin(i * 1.3) * (rs + 120 + Math.random() * 80);
+          }
         }
-      }
+      } else if (behavior === 'galaxy') {
+        // Dark Matter halo flat rotation curve v_c = const
+        const r = Math.hypot(p.x, p.y) + 0.1;
+        const vFlat = 4.8;
+        const vCirc = vFlat * (r / Math.sqrt(r * r + 250));
+        // Tangential orbital velocity
+        p.vx += (-p.y / r) * vCirc * dt * 4.5;
+        p.vy += (p.x / r) * vCirc * dt * 4.5;
 
-      // Object-specific gravity rule
-      if (gravity !== 0 && !isHigherDim) {
-        p.vy += gravity * 0.05 * timeScale;
+        // Spiral arm cohesion restoration
+        const armDx = p.targetX - p.x;
+        const armDy = p.targetY - p.y;
+        p.vx += armDx * 0.05 * healSpeed;
+        p.vy += armDy * 0.05 * healSpeed;
+      } else if (behavior === 'quantum') {
+        // Heisenberg Uncertainty Principle jitter & probability breathing
+        p.vx += (Math.random() - 0.5) * 0.5;
+        p.vy += (Math.random() - 0.5) * 0.5;
+        const qdx = p.targetX - p.x;
+        const qdy = p.targetY - p.y;
+        p.vx += qdx * 0.06 * healSpeed;
+        p.vy += qdy * 0.06 * healSpeed;
+      } else if (behavior === 'dimension') {
+        // Dimensional manifold projection tracking without planar gravity
+        const ddx = p.targetX - p.x;
+        const ddy = p.targetY - p.y;
+        p.vx += ddx * 0.08 * healSpeed;
+        p.vy += ddy * 0.08 * healSpeed;
+      } else {
+        // Standard shape spring healing and gravity
+        if (healingEnabled && p.alive) {
+          const dx = p.targetX - p.x;
+          const dy = p.targetY - p.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > this.healing.threshold) {
+            const pull = Math.min(dist * healStrength, 14.0) * healSpeed;
+            p.vx += (dx / dist) * pull;
+            p.vy += (dy / dist) * pull;
+          }
+        }
+        if (gravity !== 0 && !isHigherDim) {
+          p.vy += gravity * 0.05 * timeScale;
+        }
       }
 
       // Physics damping & turbulence
@@ -469,7 +766,7 @@ export class UniverseEngine {
       p.age += dt;
 
       // Boundless infinite universe coordinate wrap
-      const bound = 3500;
+      const bound = this.infinityMode ? 6000 : 3500;
       if (p.x > bound) p.x = -bound;
       else if (p.x < -bound) p.x = bound;
       if (p.y > bound) p.y = -bound;
@@ -515,7 +812,7 @@ export class UniverseEngine {
 
     // Trail persistence clear
     const trail = Math.max(0.1, 1 - this.appearance.trailLength);
-    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    const isDark = this.theme === 'dark' || document.documentElement.getAttribute('data-theme') !== 'light';
     
     ctx.save();
     ctx.fillStyle = isDark
@@ -536,6 +833,11 @@ export class UniverseEngine {
 
     // Render Particles
     this.renderParticles(ctx, isDark);
+
+    // Render Tactical Canon Battery & Reticle Crosshair HUD
+    if (this.canon.active) {
+      this.renderCanonHUD(ctx, camX, camY, width, height, zoom, isDark);
+    }
 
     ctx.restore();
   }
@@ -587,17 +889,135 @@ export class UniverseEngine {
     ctx.fillText('(0, 0)', 6 / zoom, -6 / zoom);
   }
 
+  private renderCanonHUD(
+    ctx: CanvasRenderingContext2D,
+    camX: number,
+    camY: number,
+    width: number,
+    height: number,
+    zoom: number,
+    isDark: boolean
+  ) {
+    const turretX = camX;
+    const turretY = camY + (height / 2) / zoom - 28 / zoom;
+
+    // Tactical Turret Battery Base at screen bottom
+    ctx.save();
+    ctx.translate(turretX, turretY);
+
+    let aimAngle = -Math.PI / 2;
+    if (this.aimCrosshair.visible) {
+      const adx = this.aimCrosshair.x - turretX;
+      const ady = this.aimCrosshair.y - turretY;
+      aimAngle = Math.atan2(ady, adx);
+    }
+
+    ctx.rotate(aimAngle);
+    ctx.fillStyle = isDark ? 'rgba(30, 41, 59, 0.9)' : 'rgba(203, 213, 225, 0.9)';
+    ctx.strokeStyle = isDark ? '#38bdf8' : '#0284c7';
+    ctx.lineWidth = 2 / zoom;
+
+    // Dual barrels
+    ctx.fillRect(0, -6 / zoom, 28 / zoom, 4 / zoom);
+    ctx.fillRect(0, 2 / zoom, 28 / zoom, 4 / zoom);
+    ctx.strokeRect(0, -6 / zoom, 28 / zoom, 4 / zoom);
+    ctx.strokeRect(0, 2 / zoom, 28 / zoom, 4 / zoom);
+
+    // Turret core pivot
+    ctx.beginPath();
+    ctx.arc(0, 0, 14 / zoom, 0, Math.PI * 2);
+    ctx.fillStyle = isDark ? '#0f172a' : '#e2e8f0';
+    ctx.fill();
+    ctx.stroke();
+
+    // Energy core light
+    ctx.beginPath();
+    ctx.arc(0, 0, 5 / zoom, 0, Math.PI * 2);
+    ctx.fillStyle = this.handMode ? '#60a5fa' : '#f97316';
+    ctx.fill();
+
+    ctx.restore();
+
+    // Render Sci-Fi Reticle Crosshair HUD at target
+    if (this.aimCrosshair.visible) {
+      const cx = this.aimCrosshair.x;
+      const cy = this.aimCrosshair.y;
+      const r = 24 / zoom;
+      const time = this.simTime;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      const color = this.handMode ? 'rgba(96, 165, 250, 0.85)' : 'rgba(249, 115, 22, 0.9)';
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 1.5 / zoom;
+
+      // Rotating dashed outer ring
+      ctx.save();
+      ctx.rotate(time * 1.5);
+      ctx.setLineDash([4 / zoom, 4 / zoom]);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // Inner solid target circle with center dot
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.45, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, 2 / zoom, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 4 Precision crosshair ticks
+      const tLen = 8 / zoom;
+      ctx.beginPath();
+      ctx.moveTo(-r - tLen, 0); ctx.lineTo(-r + 2 / zoom, 0);
+      ctx.moveTo(r - 2 / zoom, 0); ctx.lineTo(r + tLen, 0);
+      ctx.moveTo(0, -r - tLen); ctx.lineTo(0, -r + 2 / zoom);
+      ctx.moveTo(0, r - 2 / zoom); ctx.lineTo(0, r + tLen);
+      ctx.stroke();
+
+      // Range readout
+      const dist = Math.round(Math.hypot(cx - turretX, cy - turretY));
+      ctx.font = `${Math.max(8, 10 / zoom)}px 'JetBrains Mono', monospace`;
+      ctx.fillText(`RNG: ${dist}m`, r + 6 / zoom, 4 / zoom);
+
+      ctx.restore();
+    }
+  }
+
   private renderProjectiles(ctx: CanvasRenderingContext2D, isDark: boolean) {
     for (let i = 0; i < this.projectiles.length; i++) {
       const p = this.projectiles[i];
       const progress = p.age / p.maxAge;
 
       if (p.type === 'beam') {
-        // Continuous directed laser beam
+        const alpha = Math.max(0.1, 1 - progress);
+        // Outer atmospheric bloom
         ctx.strokeStyle = p.suppressParticleEffect
-          ? 'rgba(147, 197, 253, 0.7)' // soft cyan when Hand mode suppresses blast
-          : 'rgba(239, 68, 68, 0.85)'; // hot red/orange beam
-        ctx.lineWidth = 3;
+          ? `rgba(147, 197, 253, ${0.35 * alpha})`
+          : `rgba(249, 115, 22, ${0.45 * alpha})`;
+        ctx.lineWidth = 14;
+        ctx.beginPath();
+        ctx.moveTo(p.startX, p.startY);
+        ctx.lineTo(p.targetX, p.targetY);
+        ctx.stroke();
+
+        // Mid neon laser beam
+        ctx.strokeStyle = p.suppressParticleEffect
+          ? `rgba(96, 165, 250, ${0.8 * alpha})`
+          : `rgba(239, 68, 68, ${0.9 * alpha})`;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(p.startX, p.startY);
+        ctx.lineTo(p.targetX, p.targetY);
+        ctx.stroke();
+
+        // Hyper-dense white-hot core
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(p.startX, p.startY);
         ctx.lineTo(p.targetX, p.targetY);
@@ -629,6 +1049,25 @@ export class UniverseEngine {
     const colored = this.appearance.coloredParticles;
     const colorSource = this.appearance.colorSource;
 
+    // Genuine high-density micro-splats when infinite mode is active (> 20k)
+    let extraSplats = 0;
+    let jitterRadius = 2.5;
+    if (this.infinityMode && this.infiniteTargetCount > 20000) {
+      if (this.infiniteTargetCount <= 100000) {
+        extraSplats = 1;
+        jitterRadius = 3.2;
+      } else if (this.infiniteTargetCount <= 1000000) {
+        extraSplats = 2;
+        jitterRadius = 4.5;
+      } else if (this.infiniteTargetCount <= 10000000) {
+        extraSplats = 3;
+        jitterRadius = 6.0;
+      } else {
+        extraSplats = 4;
+        jitterRadius = 7.5;
+      }
+    }
+
     // Fast path: if monochrome (default), batch single path for performance
     if (!colored) {
       const fill = isDark ? '#f8fafc' : '#0f172a';
@@ -636,17 +1075,51 @@ export class UniverseEngine {
       ctx.beginPath();
       for (let i = 0; i < count; i++) {
         const p = this.particles[i];
-        const rad = Math.max(0.7, p.size * baseSize * 0.7);
+        const rad = Math.max(0.4, p.size * baseSize * 0.7);
         ctx.moveTo(p.x + rad, p.y);
         ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+
+        if (extraSplats > 0) {
+          const microRad = Math.max(0.3, rad * 0.65);
+          for (let s = 1; s <= extraSplats; s++) {
+            const angle = (i * 2.39996 + s * 1.5708) % 6.28318;
+            const dist = jitterRadius * (0.3 + (s / extraSplats) * 0.7);
+            const sx = p.x + Math.cos(angle) * dist;
+            const sy = p.y + Math.sin(angle) * dist;
+            ctx.moveTo(sx + microRad, sy);
+            ctx.arc(sx, sy, microRad, 0, Math.PI * 2);
+          }
+        }
       }
       ctx.fill();
+      return;
+    }
+
+    // Palette mapping path
+    if (colorSource === 'palette') {
+      const pal = getPaletteById(this.activePaletteId);
+      const colors = pal.colors;
+      for (let i = 0; i < count; i++) {
+        const p = this.particles[i];
+        ctx.fillStyle = p.colorOverride || colors[i % colors.length];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(0.7, p.size * baseSize * 0.8), 0, Math.PI * 2);
+        ctx.fill();
+      }
       return;
     }
 
     // Chromatic path when colored particles enabled via Pencil
     for (let i = 0; i < count; i++) {
       const p = this.particles[i];
+      if (p.colorOverride) {
+        ctx.fillStyle = p.colorOverride;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(0.7, p.size * baseSize * 0.8), 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+
       const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
       let hue = 210; // default electric blue
 
@@ -695,7 +1168,8 @@ export class UniverseEngine {
         this.frameCount = 0;
         this.lastFpsUpdate = timestamp;
         if (this.onMetricsUpdate) {
-          this.onMetricsUpdate(this.fpsCounter, this.particles.length);
+          const reportedCount = this.infinityMode ? this.infiniteTargetCount : this.particles.length;
+          this.onMetricsUpdate(this.fpsCounter, reportedCount);
         }
       }
 

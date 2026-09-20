@@ -8,12 +8,14 @@ import { UniverseCanvas } from './ui/canvas/UniverseCanvas';
 import { PrimaryControls } from './ui/controls/PrimaryControls';
 import { CanonMiniMenu } from './ui/canon/CanonMiniMenu';
 import { PencilMenu } from './ui/pencil/PencilMenu';
+import { ParticleLabModal } from './ui/lab/ParticleLabModal';
 import { FloatingHints } from './ui/hints/FloatingHints';
 import { UniverseFooter } from './ui/common/UniverseFooter';
+import { GitHubButton } from './ui/common/GitHubButton';
 import { useUniverseStore } from './state/useUniverseStore';
 
 export default function App() {
-  const { theme, setTheme } = useUniverseStore();
+  const { theme, setTheme, labModalOpen, setLabModalOpen } = useUniverseStore();
 
   // Initialize theme from system or browser preference (Section 2.3)
   useEffect(() => {
@@ -21,12 +23,16 @@ export default function App() {
     const initialTheme = prefersDark ? 'dark' : 'light';
     setTheme(initialTheme);
     document.documentElement.setAttribute('data-theme', initialTheme);
+    if (initialTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = (e: MediaQueryListEvent) => {
       const newTheme = e.matches ? 'dark' : 'light';
       setTheme(newTheme);
-      document.documentElement.setAttribute('data-theme', newTheme);
     };
 
     mediaQuery.addEventListener('change', handleChange);
@@ -50,11 +56,17 @@ export default function App() {
       {/* Pencil Comprehensive Universe Architect & Configuration Modal */}
       <PencilMenu />
 
+      {/* Particle Physics Laboratory & Tweak Experimentation Suite */}
+      <ParticleLabModal isOpen={labModalOpen} onClose={() => setLabModalOpen(false)} />
+
       {/* Randomized Contextual Math Discovery Hints */}
       <FloatingHints />
 
       {/* Technical Identity Footer */}
       <UniverseFooter />
+
+      {/* Bottom Right Repository Link */}
+      <GitHubButton />
     </main>
   );
 }

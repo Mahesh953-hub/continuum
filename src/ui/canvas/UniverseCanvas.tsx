@@ -14,6 +14,7 @@ export const UniverseCanvas: React.FC = () => {
 
   // Zustand Store selectors
   const {
+    theme,
     handMode,
     canonMode,
     canon,
@@ -27,6 +28,7 @@ export const UniverseCanvas: React.FC = () => {
     camera,
     updateCamera,
     setPerformanceMetrics,
+    setActiveEngine,
   } = useUniverseStore();
 
   // Gesture state tracking
@@ -42,6 +44,7 @@ export const UniverseCanvas: React.FC = () => {
 
     const engine = new UniverseEngine(canvas);
     engineRef.current = engine;
+    setActiveEngine(engine);
 
     engine.onMetricsUpdate = (fps, count) => {
       setPerformanceMetrics(fps, count);
@@ -59,13 +62,15 @@ export const UniverseCanvas: React.FC = () => {
       window.removeEventListener('resize', handleResize);
       engine.destroy();
       engineRef.current = null;
+      setActiveEngine(null);
     };
-  }, [setPerformanceMetrics]);
+  }, [setPerformanceMetrics, setActiveEngine]);
 
   // Sync state changes to engine instance
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
+    engine.setTheme(theme);
     engine.handMode = handMode;
     engine.physics = physics;
     engine.healing = healing;
@@ -74,7 +79,7 @@ export const UniverseCanvas: React.FC = () => {
     engine.canon = canon;
     engine.camera = camera;
     engine.activePresetId = activePresetId;
-  }, [handMode, physics, healing, dimensionConfig, appearance, canon, camera, activePresetId]);
+  }, [theme, handMode, physics, healing, dimensionConfig, appearance, canon, camera, activePresetId]);
 
   // Shape transition
   useEffect(() => {
@@ -124,9 +129,13 @@ export const UniverseCanvas: React.FC = () => {
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isPointerDownRef.current) return;
-
     const { universeX, universeY } = screenToUniverse(e.clientX, e.clientY);
+
+    if (canonMode) {
+      engineRef.current?.updateAimCrosshair(universeX, universeY, true);
+    }
+
+    if (!isPointerDownRef.current) return;
 
     // If Hand mode is ON: drag pans the camera
     if (handMode) {

@@ -9,8 +9,12 @@ import {
   AppearanceConfig,
   CameraState,
   CanonSettings,
+  CustomColorPalette,
   DimensionConfig,
   HintItem,
+  LabConfig,
+  ParticleColorMode,
+  ParticleSpecies,
   PhysicsConfig,
   SelfHealingConfig,
   ThemeMode,
@@ -24,10 +28,16 @@ interface UniverseState {
   pencilOpen: boolean;
   canonMode: boolean;
   canonMenuOpen: boolean;
+  infinityMode: boolean;
+  infinitySliderOpen: boolean;
+  infiniteTargetCount: number;
+  labModalOpen: boolean;
+  githubRepoUrl: string;
 
   // Active pencil section
   activePencilSection: 
     | 'presets'
+    | 'galaxy'
     | 'shapes'
     | 'math'
     | 'physics'
@@ -50,12 +60,19 @@ interface UniverseState {
   
   // Appearance (Section 2.4: coloredParticles defaults to false!)
   appearance: AppearanceConfig;
+  activePaletteId: string;
 
   // Canon state
   canon: CanonSettings;
 
   // Camera viewport
   camera: CameraState;
+
+  // Lab & Particle Physics State
+  labConfig: LabConfig;
+
+  // Engine instance reference for high-performance direct actions
+  activeEngine: any | null;
 
   // Random control toggle state
   randomActive: boolean;
@@ -80,6 +97,18 @@ interface UniverseState {
   setCanonMode: (active: boolean) => void;
   toggleCanonMenu: () => void;
   setCanonMenuOpen: (open: boolean) => void;
+  toggleInfinityMode: () => void;
+  setInfinityMode: (enabled: boolean) => void;
+  setInfinitySliderOpen: (open: boolean) => void;
+  setInfiniteTargetCount: (count: number) => void;
+  setGithubRepoUrl: (url: string) => void;
+  setLabModalOpen: (open: boolean) => void;
+  setLabSpecies: (species: ParticleSpecies) => void;
+  setLabColorMode: (mode: ParticleColorMode) => void;
+  setLabActiveExperiment: (expId: string | null) => void;
+  setLabCustomBlankObject: (blank: any) => void;
+  setPaletteId: (paletteId: string) => void;
+  setActiveEngine: (engine: any) => void;
   updateCanonSettings: (settings: Partial<CanonSettings>) => void;
   setTheme: (theme: ThemeMode) => void;
   selectPreset: (presetId: string) => void;
@@ -93,7 +122,7 @@ interface UniverseState {
   resetCamera: () => void;
   toggleRandomMode: () => void;
   setHintsEnabled: (enabled: boolean) => void;
-  randomizeUniverse: (scope?: 'everything' | 'shape' | 'physics' | 'dimension' | 'motion') => void;
+  randomizeUniverse: () => void;
   addHint: (hint: HintItem) => void;
   removeHint: (id: string) => void;
   setPerformanceMetrics: (fps: number, count: number) => void;
@@ -105,6 +134,11 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
   pencilOpen: false,
   canonMode: false,
   canonMenuOpen: false,
+  infinityMode: false,
+  infinitySliderOpen: false,
+  infiniteTargetCount: 50000,
+  labModalOpen: false,
+  githubRepoUrl: 'https://github.com/mahesh953-hub/continuum.git',
   randomActive: false,
   hintsEnabled: true,
 
@@ -150,6 +184,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
     particleSize: 1.5,
     glowIntensity: 0.6,
   },
+  activePaletteId: 'deep-field',
 
   canon: {
     active: false,
@@ -172,81 +207,152 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
     spinSpeed: 1.0,
   },
 
-  activeHints: [],
+  labConfig: {
+    selectedSpecies: 'electron',
+    colorMode: 'genuine',
+    activeExperiment: 'none',
+  },
+
+  activeEngine: null,
+
   fps: 60,
   activeParticlesCount: 3800,
+  activeHints: [],
 
-  // Action implementations
   toggleHandMode: () => set((state) => ({ handMode: !state.handMode })),
   setHandMode: (active) => set({ handMode: active }),
 
   togglePencil: () => set((state) => ({ pencilOpen: !state.pencilOpen })),
   setPencilOpen: (open) => set({ pencilOpen: open }),
+
   setActivePencilSection: (section) => set({ activePencilSection: section }),
 
-  toggleCanonMode: () => set((state) => ({ canonMode: !state.canonMode })),
-  setCanonMode: (active) => set({ canonMode: active }),
-  toggleCanonMenu: () => set((state) => ({ canonMenuOpen: !state.canonMenuOpen })),
+  toggleCanonMode: () =>
+    set((state) => ({
+      canonMode: !state.canonMode,
+      canon: { ...state.canon, active: !state.canonMode },
+    })),
+  setCanonMode: (active) =>
+    set((state) => ({ canonMode: active, canon: { ...state.canon, active } })),
+
+  toggleCanonMenu: () =>
+    set((state) => ({ canonMenuOpen: !state.canonMenuOpen })),
   setCanonMenuOpen: (open) => set({ canonMenuOpen: open }),
 
-  toggleRandomMode: () => {
-    const next = !get().randomActive;
-    set({ randomActive: next });
-    if (next) {
-      get().randomizeUniverse('everything');
+  toggleInfinityMode: () => {
+    const next = !get().infinityMode;
+    set({ infinityMode: next, infinitySliderOpen: next });
+    const engine = get().activeEngine;
+    if (engine) {
+      engine.setInfinityMode(next);
+      if (next) {
+        engine.setInfiniteTargetCount(get().infiniteTargetCount);
+      }
+    }
+  },
+  setInfinityMode: (enabled) => {
+    set({ infinityMode: enabled, infinitySliderOpen: enabled ? get().infinitySliderOpen : false });
+    const engine = get().activeEngine;
+    if (engine) {
+      engine.setInfinityMode(enabled);
+      if (enabled) {
+        engine.setInfiniteTargetCount(get().infiniteTargetCount);
+      }
+    }
+  },
+  setInfinitySliderOpen: (open) => set({ infinitySliderOpen: open }),
+  setInfiniteTargetCount: (count) => {
+    const clamped = Math.max(10000, Math.min(100000000, count));
+    set({ infiniteTargetCount: clamped, activeParticlesCount: clamped });
+    const engine = get().activeEngine;
+    if (engine) {
+      engine.setInfiniteTargetCount(clamped);
+    }
+  },
+  setGithubRepoUrl: (url) => set({ githubRepoUrl: url }),
+
+  setLabModalOpen: (open) => set({ labModalOpen: open }),
+  setLabSpecies: (species) =>
+    set((state) => ({
+      labConfig: { ...state.labConfig, selectedSpecies: species },
+    })),
+  setLabColorMode: (mode) =>
+    set((state) => ({
+      labConfig: { ...state.labConfig, colorMode: mode },
+    })),
+  setLabActiveExperiment: (expId) =>
+    set((state) => ({
+      labConfig: { ...state.labConfig, activeExperiment: expId },
+    })),
+  setLabCustomBlankObject: (blank) =>
+    set((state) => ({
+      labConfig: { ...state.labConfig, customBlankObject: blank },
+    })),
+
+  setPaletteId: (paletteId) => {
+    set((state) => ({
+      activePaletteId: paletteId,
+      appearance: {
+        ...state.appearance,
+        coloredParticles: true,
+        colorSource: 'palette',
+      },
+    }));
+    const engine = get().activeEngine;
+    if (engine) {
+      engine.setPaletteId(paletteId);
     }
   },
 
-  setHintsEnabled: (enabled) => set({ hintsEnabled: enabled, activeHints: enabled ? get().activeHints : [] }),
+  setActiveEngine: (engine) => set({ activeEngine: engine }),
 
   updateCanonSettings: (settings) =>
     set((state) => ({ canon: { ...state.canon, ...settings } })),
 
   setTheme: (theme) => {
-    document.documentElement.setAttribute('data-theme', theme);
     set({ theme });
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+    const engine = get().activeEngine;
+    if (engine) {
+      engine.setTheme(theme);
+    }
   },
+
+  toggleRandomMode: () => set((state) => ({ randomActive: !state.randomActive })),
+  setHintsEnabled: (enabled) => set({ hintsEnabled: enabled }),
 
   selectPreset: (presetId) => {
     const preset = PRESETS_REGISTRY.find((p) => p.id === presetId);
     if (!preset) return;
+
     set((state) => ({
-      activePresetId: preset.id,
+      activePresetId: presetId,
       activeShapeId: preset.shapeId,
-      particleCount: preset.particleCount,
+      physics: { ...state.physics, ...preset.physics },
+      healing: { ...state.healing, ...preset.healing },
       dimensionConfig: {
         ...state.dimensionConfig,
         currentDimension: preset.dimension,
       },
-      physics: {
-        ...state.physics,
-        ...preset.physics,
-      },
-      healing: {
-        ...state.healing,
-        ...preset.healing,
-      },
-      appearance: {
-        ...state.appearance,
-        ...preset.appearance,
-      },
+      appearance: preset.appearance
+        ? { ...state.appearance, ...preset.appearance }
+        : state.appearance,
+      particleCount: preset.particleCount,
     }));
   },
 
   selectShape: (shapeId) => {
     const shape = SHAPES_REGISTRY.find((s) => s.id === shapeId);
-    if (!shape) return;
-    
-    // Auto-detect dimension if it's a dimensional shape
-    let detectedDim = get().dimensionConfig.currentDimension;
-    if (shape.id === '1d-line') detectedDim = 1;
-    else if (shape.id === '2d-plane') detectedDim = 2;
-    else if (shape.id === '3d-hypersphere-shell') detectedDim = 3;
-    else if (shape.id.includes('4d') || shape.id === 'clifford-torus') detectedDim = 4;
-    else if (shape.id.includes('5d')) detectedDim = 5;
-    else if (shape.id.includes('6d') || shape.id === 'calabi-yau-6d') detectedDim = 6;
-    else if (shape.id.includes('11d')) detectedDim = 11;
-    else if (shape.category === 'dimensions') {
+    let detectedDim = 3;
+    if (shape) {
+      if (shape.dimension) detectedDim = shape.dimension;
       const match = shape.id.match(/(\d+)d/);
       if (match) detectedDim = parseInt(match[1], 10);
     }
@@ -290,41 +396,28 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
       },
     }),
 
-  randomizeUniverse: (scope = 'everything') => {
+  /**
+   * Random Mode: Purely randomizes the selection of objects from SHAPES_REGISTRY (1000+ catalog),
+   * NEVER modifying, degrading, or scrambling user behavior, physics, or appearance.
+   */
+  randomizeUniverse: () => {
     const shapes = SHAPES_REGISTRY;
+    if (!shapes || shapes.length === 0) return;
     const randomShape = shapes[Math.floor(Math.random() * shapes.length)];
-    const randomDim = Math.floor(Math.random() * 11) + 1;
+    let detectedDim = randomShape.dimension || 3;
 
-    set((state) => {
-      const newShapeId = scope === 'everything' || scope === 'shape' ? randomShape.id : state.activeShapeId;
-      const newDim = scope === 'everything' || scope === 'dimension' ? randomDim : state.dimensionConfig.currentDimension;
-
-      let newPhysics = { ...state.physics };
-      if (scope === 'everything' || scope === 'physics' || scope === 'motion') {
-        newPhysics = {
-          ...newPhysics,
-          gravity: Number((Math.random() * 1.5).toFixed(2)),
-          damping: Number((0.92 + Math.random() * 0.075).toFixed(3)),
-          timeScale: Number((0.6 + Math.random() * 0.8).toFixed(2)),
-          turbulence: Number((Math.random() * 0.4).toFixed(2)),
-        };
-      }
-
-      return {
-        activePresetId: 'procedural',
-        activeShapeId: newShapeId,
-        dimensionConfig: {
-          ...state.dimensionConfig,
-          currentDimension: newDim,
-        },
-        physics: newPhysics,
-      };
-    });
+    set((state) => ({
+      activePresetId: 'procedural',
+      activeShapeId: randomShape.id,
+      dimensionConfig: {
+        ...state.dimensionConfig,
+        currentDimension: detectedDim,
+      },
+    }));
   },
 
   addHint: (hint) =>
     set((state) => {
-      // Avoid excessive duplicates
       if (state.activeHints.some((h) => h.id === hint.id)) return state;
       return { activeHints: [...state.activeHints.slice(-3), hint] };
     }),
@@ -337,3 +430,4 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
   setPerformanceMetrics: (fps, count) =>
     set({ fps, activeParticlesCount: count }),
 }));
+

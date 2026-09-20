@@ -57,9 +57,55 @@ export interface DimensionConfig {
   phase: number;
 }
 
+export type CustomColorPaletteId = 
+  | 'deep-field'
+  | 'standard-model'
+  | 'plasma-thermal'
+  | 'quantum-chromodynamics'
+  | 'bioluminescent'
+  | 'cybernetic'
+  | 'gravitational-lensing'
+  | 'starlight-silver';
+
+export interface CustomColorPalette {
+  id: CustomColorPaletteId;
+  name: string;
+  description: string;
+  colors: string[]; // Hex or hsl
+}
+
+export type ParticleSpecies = 
+  | 'electron'
+  | 'proton'
+  | 'neutron'
+  | 'photon'
+  | 'up-quark'
+  | 'down-quark'
+  | 'gluon'
+  | 'muon'
+  | 'tau'
+  | 'neutrino'
+  | 'boson'
+  | 'higgs';
+
+export type ParticleColorMode = 'white' | 'default' | 'genuine';
+
+export interface LabConfig {
+  activeExperiment: 'none' | 'double-slit' | 'collider' | 'tunneling' | 'rope' | 'tunnel-flow' | 'blackhole-collapse' | string | null;
+  selectedSpecies: ParticleSpecies;
+  colorMode: ParticleColorMode;
+  particleCharge?: number;
+  particleMass?: number;
+  collisionEnergy?: number;
+  barrierThickness?: number;
+  streamSpeed?: number;
+  customBlankObject?: any;
+}
+
 export interface AppearanceConfig {
   coloredParticles: boolean; // LOCKED DEFAULT: false
-  colorSource: 'monochrome' | 'velocity' | 'energy' | 'shape' | 'dimension' | 'spectrum' | 'thermal';
+  colorSource: 'monochrome' | 'velocity' | 'energy' | 'shape' | 'dimension' | 'spectrum' | 'thermal' | 'palette';
+  activePaletteId?: CustomColorPaletteId;
   monochromeLuminance: number;
   trailLength: number; // 0 to 1
   particleSize: number;
@@ -72,14 +118,27 @@ export interface PhysicsConfig {
   timeScale: number;
   collisionSoftness: number;
   turbulence: number;
+  infinityMode?: boolean; // Forcibly expands particle count and bounds
 }
 
+export type ObjectBehaviorType = 
+  | 'standard'
+  | 'blackhole'
+  | 'galaxy'
+  | 'dimension'
+  | 'quantum'
+  | 'orbital'
+  | 'attractor'
+  | 'lattice';
+
 export type ShapeCategory = 
+  | 'galaxy'
+  | 'dimensions'
   | 'geometry'
   | 'parametric'
-  | 'surfaces'
   | 'fractals'
-  | 'dimensions'
+  | 'surfaces'
+  | 'quantum'
   | 'biological'
   | 'cosmic'
   | 'diagrams';
@@ -90,6 +149,8 @@ export interface ShapeDefinition {
   category: ShapeCategory;
   equation?: string;
   description: string;
+  behaviorType?: ObjectBehaviorType;
+  dimension?: number;
   generator: (count: number, params?: Record<string, number>) => { x: number; y: number; z?: number; w?: number }[];
   defaultParams?: Record<string, number>;
 }
@@ -139,6 +200,11 @@ export interface ParticleInternal {
   shapeIndex: number;
   // Interaction & visual state
   lastDisplacedTime: number;
+  species?: ParticleSpecies;
+  colorOverride?: string;
+  orbitRadius?: number;
+  orbitSpeed?: number;
+  orbitAngle?: number;
   colorH?: number;
   colorS?: number;
   colorL?: number;

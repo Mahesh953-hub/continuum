@@ -60,23 +60,27 @@ const DISCOVERY_HINTS: Omit<HintItem, 'id' | 'xPercent' | 'yPercent' | 'duration
 export const FloatingHints: React.FC = () => {
   const { activeHints, addHint, removeHint, hintsEnabled, setHintsEnabled } = useUniverseStore();
 
-  // Periodic hint scheduler with generous delay between hints (no flooding/spam)
+  // Periodic hint scheduler with generous delay & cooldown between hints (no flooding/spam)
   useEffect(() => {
     if (!hintsEnabled) {
-      // Clear any pending hints if disabled
       activeHints.forEach((h) => removeHint(h.id));
       return;
     }
 
+    let lastDismissTime = 0;
+
     const interval = setInterval(() => {
-      // Keep at most 1 hint at a time to prevent any flood or spam
+      const now = Date.now();
+      // Ensure at least 35s cooldown since the previous hint was dismissed
+      if (now - lastDismissTime < 35000) return;
+      // Strict constraint: at most 1 hint displayed at any single moment
       if (activeHints.length >= 1) return;
 
       const randomTemplate = DISCOVERY_HINTS[Math.floor(Math.random() * DISCOVERY_HINTS.length)];
       // Safe position boundaries (avoid top-right control area and bottom footer)
-      const xPercent = Math.floor(Math.random() * 40) + 6; // 6% to 46% from left
-      const yPercent = Math.floor(Math.random() * 40) + 18; // 18% to 58% from top
-      const durationMs = 12000; // 12 seconds visible duration
+      const xPercent = Math.floor(Math.random() * 36) + 8; // 8% to 44% from left
+      const yPercent = Math.floor(Math.random() * 36) + 22; // 22% to 58% from top
+      const durationMs = 10000; // 10 seconds visible duration
 
       const newHint: HintItem = {
         ...randomTemplate,
@@ -91,8 +95,9 @@ export const FloatingHints: React.FC = () => {
       // Auto-dismiss timer
       setTimeout(() => {
         removeHint(newHint.id);
+        lastDismissTime = Date.now();
       }, durationMs);
-    }, 38000); // 38s between hints to ensure deliberate, non-spam spacing
+    }, 45000); // 45s between interval evaluations for deliberate, peaceful discovery
 
     return () => clearInterval(interval);
   }, [activeHints.length, addHint, removeHint, hintsEnabled]);
