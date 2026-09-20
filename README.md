@@ -14,7 +14,7 @@
 ## 🚀 Live Preview
 
 <!-- Replace the URL below with your deployed live preview link -->
-🔗 **[Launch Continuum in Browser](https://ais-pre-pwj7j5i2svqdazin3i75tr-262216249396.asia-southeast1.run.app)**
+🔗 **[Launch Continuum in Browser](https://continuum-x.ai.studio)**
 
 ---
 
